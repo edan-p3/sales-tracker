@@ -16,6 +16,7 @@ const SalesActivityTracker = () => {
   const [reps, setReps] = useState(['Rep 1', 'Rep 2', 'Rep 3']);
   const [newRepName, setNewRepName] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
@@ -36,69 +37,112 @@ const SalesActivityTracker = () => {
     return new Date(d.setDate(diff)).toISOString().split('T')[0];
   };
 
-  const loadData = async () => {
+  const loadData = () => {
     try {
-      const goalsData = await window.storage.get('tracker-goals');
-      if (goalsData) setGoals(JSON.parse(goalsData.value));
+      const savedGoals = localStorage.getItem('tracker-goals');
+      if (savedGoals) setGoals(JSON.parse(savedGoals));
 
-      const repsData = await window.storage.get('tracker-reps');
-      if (repsData) setReps(JSON.parse(repsData.value));
+      const savedReps = localStorage.getItem('tracker-reps');
+      if (savedReps) setReps(JSON.parse(savedReps));
+
+      const savedLogo = localStorage.getItem('tracker-logo');
+      if (savedLogo) setLogoUrl(savedLogo);
 
       const today = new Date();
       const monday = getMondayOfWeek(today);
       setWeekStart(monday);
     } catch (err) {
+      console.error('Error loading data:', err);
       const today = new Date();
       const monday = getMondayOfWeek(today);
       setWeekStart(monday);
     }
   };
 
-  const loadWeekData = async () => {
+  const loadWeekData = () => {
     const key = `week-${weekStart}-${selectedRep}`;
     try {
-      const data = await window.storage.get(key);
+      const data = localStorage.getItem(key);
       if (data) {
-        setWeekData(JSON.parse(data.value));
+        setWeekData(JSON.parse(data));
       } else {
         setWeekData({});
       }
     } catch (err) {
+      console.error('Error loading week data:', err);
       setWeekData({});
     }
   };
 
-  const saveWeekData = async () => {
+  const saveWeekData = () => {
     const key = `week-${weekStart}-${selectedRep}`;
-    await window.storage.set(key, JSON.stringify(weekData));
-    setSavedMessage('✓ Data saved!');
-    setTimeout(() => setSavedMessage(''), 2000);
+    try {
+      localStorage.setItem(key, JSON.stringify(weekData));
+      setSavedMessage('✓ Data saved successfully!');
+      setTimeout(() => setSavedMessage(''), 3000);
+    } catch (err) {
+      console.error('Error saving data:', err);
+      setSavedMessage('❌ Error saving data!');
+      setTimeout(() => setSavedMessage(''), 3000);
+    }
   };
 
-  const saveGoals = async () => {
-    await window.storage.set('tracker-goals', JSON.stringify(goals));
-    setSavedMessage('✓ Goals updated!');
-    setTimeout(() => setSavedMessage(''), 2000);
+  const saveGoals = () => {
+    try {
+      localStorage.setItem('tracker-goals', JSON.stringify(goals));
+      setSavedMessage('✓ Goals updated!');
+      setTimeout(() => setSavedMessage(''), 2000);
+    } catch (err) {
+      console.error('Error saving goals:', err);
+    }
   };
 
-  const saveReps = async () => {
-    await window.storage.set('tracker-reps', JSON.stringify(reps));
+  const saveReps = () => {
+    try {
+      localStorage.setItem('tracker-reps', JSON.stringify(reps));
+    } catch (err) {
+      console.error('Error saving reps:', err);
+    }
+  };
+
+  const saveLogo = (url) => {
+    try {
+      localStorage.setItem('tracker-logo', url);
+      setLogoUrl(url);
+      setSavedMessage('✓ Logo updated!');
+      setTimeout(() => setSavedMessage(''), 2000);
+    } catch (err) {
+      console.error('Error saving logo:', err);
+    }
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        saveLogo(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const addRep = () => {
     if (newRepName.trim() && !reps.includes(newRepName.trim())) {
       const updated = [...reps, newRepName.trim()];
       setReps(updated);
-      saveReps();
+      localStorage.setItem('tracker-reps', JSON.stringify(updated));
       setNewRepName('');
+      setSavedMessage('✓ Rep added!');
+      setTimeout(() => setSavedMessage(''), 2000);
     }
   };
 
   const removeRep = (rep) => {
-    if (window.confirm(`Remove ${rep}?`)) {
+    if (window.confirm(`Remove ${rep}? This will NOT delete their saved data.`)) {
       const updated = reps.filter(r => r !== rep);
       setReps(updated);
-      saveReps();
+      localStorage.setItem('tracker-reps', JSON.stringify(updated));
       if (selectedRep === rep) setSelectedRep('');
     }
   };
@@ -125,56 +169,52 @@ const SalesActivityTracker = () => {
     return totals;
   };
 
-  const exportToExcel = async () => {
+  const exportToExcel = () => {
     const allData = [];
     
-    // Get all storage keys to find all week data
-    try {
-      const allKeys = await window.storage.list('week-');
-      
-      for (const keyObj of allKeys.keys) {
-        const key = keyObj;
-        if (!key.startsWith('week-')) continue;
-        
-        try {
-          const data = await window.storage.get(key);
-          if (data) {
-            // Parse key: week-2024-01-01-RepName
-            const parts = key.split('-');
-            const monday = `${parts[1]}-${parts[2]}-${parts[3]}`;
-            const rep = parts.slice(4).join('-');
-            
-            const weekInfo = JSON.parse(data.value);
-            days.forEach((day, idx) => {
-              const dayData = weekInfo[day] || {};
-              const currentDate = new Date(monday);
-              currentDate.setDate(currentDate.getDate() + idx);
-              
-              allData.push({
-                'Sales Rep': rep,
-                'Week Starting': monday,
-                'Date': currentDate.toISOString().split('T')[0],
-                'Day': day,
-                'Calls': dayData.calls || 0,
-                'Emails': dayData.emails || 0,
-                'Contacts': dayData.contacts || 0,
-                'Responses': dayData.responses || 0
-              });
-            });
-          }
-        } catch (err) {
-          console.log('Error reading key:', key, err);
-          continue;
-        }
-      }
-    } catch (err) {
-      console.error('Error listing keys:', err);
-      alert('Could not export data. Make sure you have saved some data first.');
+    // Get all keys from localStorage
+    const allKeys = Object.keys(localStorage);
+    const weekKeys = allKeys.filter(key => key.startsWith('week-'));
+    
+    if (weekKeys.length === 0) {
+      alert('No data to export. Please save some activity data first!');
       return;
     }
 
+    weekKeys.forEach(key => {
+      try {
+        const data = localStorage.getItem(key);
+        if (data) {
+          // Parse key: week-2024-01-01-RepName
+          const parts = key.split('-');
+          const monday = `${parts[1]}-${parts[2]}-${parts[3]}`;
+          const rep = parts.slice(4).join('-');
+          
+          const weekInfo = JSON.parse(data);
+          days.forEach((day, idx) => {
+            const dayData = weekInfo[day] || {};
+            const currentDate = new Date(monday);
+            currentDate.setDate(currentDate.getDate() + idx);
+            
+            allData.push({
+              'Sales Rep': rep,
+              'Week Starting': monday,
+              'Date': currentDate.toISOString().split('T')[0],
+              'Day': day,
+              'Calls': dayData.calls || 0,
+              'Emails': dayData.emails || 0,
+              'Contacts': dayData.contacts || 0,
+              'Responses': dayData.responses || 0
+            });
+          });
+        }
+      } catch (err) {
+        console.error('Error reading key:', key, err);
+      }
+    });
+
     if (allData.length === 0) {
-      alert('No data to export. Please save some activity data first!');
+      alert('No activity data found. Make sure you have saved some data first!');
       return;
     }
 
@@ -204,13 +244,15 @@ const SalesActivityTracker = () => {
           'Total Calls': 0,
           'Total Emails': 0,
           'Total Contacts': 0,
-          'Total Responses': 0
+          'Total Responses': 0,
+          'Days Tracked': 0
         };
       }
       summaryData[row['Sales Rep']]['Total Calls'] += row.Calls;
       summaryData[row['Sales Rep']]['Total Emails'] += row.Emails;
       summaryData[row['Sales Rep']]['Total Contacts'] += row.Contacts;
       summaryData[row['Sales Rep']]['Total Responses'] += row.Responses;
+      summaryData[row['Sales Rep']]['Days Tracked'] += 1;
     });
 
     const summaryWs = XLSX.utils.json_to_sheet(Object.values(summaryData));
@@ -218,7 +260,7 @@ const SalesActivityTracker = () => {
 
     XLSX.writeFile(wb, `Sales_Activity_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
     
-    alert(`Exported ${allData.length} activity records from ${Object.keys(summaryData).length} sales reps!`);
+    alert(`✓ Exported ${allData.length} activity records from ${Object.keys(summaryData).length} sales reps!`);
   };
 
   const totals = calculateWeeklyTotals();
@@ -350,24 +392,58 @@ const SalesActivityTracker = () => {
           background: #203a43;
           color: #fff;
         }
+
+        input[type="file"] {
+          display: none;
+        }
+
+        .logo-upload-btn {
+          padding: 0.5rem 1rem;
+          background: rgba(255, 255, 255, 0.1);
+          border: 2px dashed rgba(255, 255, 255, 0.3);
+          border-radius: 8px;
+          color: #fff;
+          cursor: pointer;
+          font-size: 0.9rem;
+          transition: all 0.2s;
+        }
+
+        .logo-upload-btn:hover {
+          background: rgba(255, 255, 255, 0.15);
+          border-color: #00d4ff;
+        }
       `}</style>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-          <h1 style={{ 
-            fontSize: '3rem', 
-            fontWeight: '700',
-            fontFamily: "'Space Mono', monospace",
-            marginBottom: '0.5rem',
-            background: 'linear-gradient(135deg, #00d4ff 0%, #667eea 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            letterSpacing: '-0.02em'
-          }}>
-            SALES TRACKER
-          </h1>
-          <p style={{ fontSize: '1.1rem', opacity: 0.8 }}>Track daily activity & crush your goals</p>
+        <div style={{ marginBottom: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2rem' }}>
+          {logoUrl && (
+            <img 
+              src={logoUrl} 
+              alt="Company Logo" 
+              style={{ 
+                height: '60px', 
+                objectFit: 'contain',
+                filter: 'brightness(0) invert(1)',
+                opacity: 0.9
+              }} 
+            />
+          )}
+          <div>
+            <h1 style={{ 
+              fontSize: '3rem', 
+              fontWeight: '700',
+              fontFamily: "'Space Mono', monospace",
+              marginBottom: '0.5rem',
+              background: 'linear-gradient(135deg, #00d4ff 0%, #667eea 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '-0.02em'
+            }}>
+              SALES TRACKER
+            </h1>
+            <p style={{ fontSize: '1.1rem', opacity: 0.8 }}>Track daily activity & crush your goals</p>
+          </div>
         </div>
 
         {/* Controls */}
@@ -414,7 +490,7 @@ const SalesActivityTracker = () => {
             <div style={{ 
               marginTop: '1rem', 
               padding: '0.75rem', 
-              background: 'rgba(56, 239, 125, 0.2)',
+              background: savedMessage.includes('❌') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 239, 125, 0.2)',
               borderRadius: '8px',
               textAlign: 'center',
               fontWeight: '600'
@@ -429,6 +505,43 @@ const SalesActivityTracker = () => {
           <div className="card" style={{ marginBottom: '2rem' }}>
             <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.3rem' }}>⚙️ Settings</h3>
             
+            {/* Logo Upload Section */}
+            <div style={{ marginBottom: '2rem', paddingBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Company Logo</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                {logoUrl && (
+                  <div style={{ 
+                    padding: '1rem', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '1rem'
+                  }}>
+                    <img src={logoUrl} alt="Logo Preview" style={{ height: '40px', objectFit: 'contain' }} />
+                    <button 
+                      onClick={() => saveLogo('')}
+                      style={{
+                        background: 'rgba(255, 0, 0, 0.3)',
+                        border: 'none',
+                        borderRadius: '4px',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                <label className="logo-upload-btn">
+                  {logoUrl ? '📸 Change Logo' : '📸 Upload Logo'}
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} />
+                </label>
+              </div>
+            </div>
+
             <div style={{ marginBottom: '2rem' }}>
               <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Daily Goals</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
