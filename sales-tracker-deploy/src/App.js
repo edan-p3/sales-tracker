@@ -148,11 +148,13 @@ const SalesActivityTracker = () => {
   };
 
   const updateDayData = (day, field, value) => {
+    // Allow empty string or convert to number (including 0)
+    const numValue = value === '' ? '' : parseInt(value);
     setWeekData(prev => ({
       ...prev,
       [day]: {
         ...(prev[day] || {}),
-        [field]: parseInt(value) || 0
+        [field]: numValue
       }
     }));
   };
@@ -415,21 +417,25 @@ const SalesActivityTracker = () => {
       `}</style>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2rem' }}>
+        {/* Header - Fixed Layout */}
+        <div style={{ marginBottom: '2rem', position: 'relative', minHeight: '100px', display: 'flex', alignItems: 'center' }}>
+          {/* Logo - Left Side */}
           {logoUrl && (
-            <img 
-              src={logoUrl} 
-              alt="Company Logo" 
-              style={{ 
-                height: '60px', 
-                objectFit: 'contain',
-                filter: 'brightness(0) invert(1)',
-                opacity: 0.9
-              }} 
-            />
+            <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)' }}>
+              <img 
+                src={logoUrl} 
+                alt="Company Logo" 
+                style={{ 
+                  height: '80px', 
+                  maxWidth: '200px',
+                  objectFit: 'contain'
+                }} 
+              />
+            </div>
           )}
-          <div>
+          
+          {/* Title - Centered */}
+          <div style={{ flex: 1, textAlign: 'center' }}>
             <h1 style={{ 
               fontSize: '3rem', 
               fontWeight: '700',
@@ -442,7 +448,7 @@ const SalesActivityTracker = () => {
             }}>
               SALES TRACKER
             </h1>
-            <p style={{ fontSize: '1.1rem', opacity: 0.8 }}>Track daily activity & crush your goals</p>
+            <p style={{ fontSize: '1.1rem', opacity: 0.8, margin: 0 }}>Track daily activity & crush your goals</p>
           </div>
         </div>
 
@@ -543,7 +549,7 @@ const SalesActivityTracker = () => {
             </div>
 
             <div style={{ marginBottom: '2rem' }}>
-              <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Daily Goals</h4>
+              <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Daily Goals (can be changed anytime)</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                 {[
                   ['Calls/Day', 'callsDaily'],
@@ -559,6 +565,7 @@ const SalesActivityTracker = () => {
                       value={goals[key]}
                       onChange={(e) => setGoals({ ...goals, [key]: parseInt(e.target.value) || 0 })}
                       style={{ width: '100%' }}
+                      min="0"
                     />
                   </div>
                 ))}
@@ -572,6 +579,7 @@ const SalesActivityTracker = () => {
                   value={goals.contactsWeekly}
                   onChange={(e) => setGoals({ ...goals, contactsWeekly: parseInt(e.target.value) || 0 })}
                   style={{ width: '200px' }}
+                  min="0"
                 />
               </div>
               
@@ -703,7 +711,7 @@ const SalesActivityTracker = () => {
                         ['Contacts', 'contacts', goals.contactsDaily],
                         ['Responses', 'responses', goals.responsesDaily]
                       ].map(([label, field, dailyGoal]) => {
-                        const value = dayData[field] || 0;
+                        const value = dayData[field] === '' ? 0 : (dayData[field] || 0);
                         const percent = dailyGoal > 0 ? (value / dailyGoal) * 100 : 0;
                         return (
                           <div key={field}>
@@ -713,7 +721,7 @@ const SalesActivityTracker = () => {
                             <input
                               type="number"
                               className="input-field"
-                              value={dayData[field] || ''}
+                              value={dayData[field] === undefined ? '' : dayData[field]}
                               onChange={(e) => updateDayData(day, field, e.target.value)}
                               placeholder="0"
                               min="0"
