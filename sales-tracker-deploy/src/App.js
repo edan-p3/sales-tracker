@@ -10,7 +10,9 @@ const SalesActivityTracker = () => {
     emailsDaily: 30,
     contactsDaily: 10,
     responsesDaily: 5,
-    contactsWeekly: 20
+    meetingsDaily: 3,
+    contactsWeekly: 20,
+    meetingsWeekly: 15
   });
   const [showSettings, setShowSettings] = useState(false);
   const [reps, setReps] = useState(['Rep 1', 'Rep 2', 'Rep 3']);
@@ -30,17 +32,35 @@ const SalesActivityTracker = () => {
     }
   }, [weekStart, selectedRep]);
 
-  const getMondayOfWeek = (date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.setDate(diff)).toISOString().split('T')[0];
+  // Accurate Gregorian calendar Monday calculation
+  const getMondayOfWeek = (dateString) => {
+    const date = new Date(dateString + 'T12:00:00'); // Noon to avoid timezone issues
+    const dayOfWeek = date.getDay();
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    
+    const monday = new Date(date);
+    monday.setDate(date.getDate() + daysToMonday);
+    
+    // Format as YYYY-MM-DD
+    const year = monday.getFullYear();
+    const month = String(monday.getMonth() + 1).padStart(2, '0');
+    const day = String(monday.getDate()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
   };
 
   const loadData = () => {
     try {
       const savedGoals = localStorage.getItem('tracker-goals');
-      if (savedGoals) setGoals(JSON.parse(savedGoals));
+      if (savedGoals) {
+        const parsed = JSON.parse(savedGoals);
+        // Ensure meetings fields exist for backward compatibility
+        setGoals({
+          ...parsed,
+          meetingsDaily: parsed.meetingsDaily || 3,
+          meetingsWeekly: parsed.meetingsWeekly || 15
+        });
+      }
 
       const savedReps = localStorage.getItem('tracker-reps');
       if (savedReps) setReps(JSON.parse(savedReps));
@@ -49,12 +69,14 @@ const SalesActivityTracker = () => {
       if (savedLogo) setLogoUrl(savedLogo);
 
       const today = new Date();
-      const monday = getMondayOfWeek(today);
+      const todayString = today.toISOString().split('T')[0];
+      const monday = getMondayOfWeek(todayString);
       setWeekStart(monday);
     } catch (err) {
       console.error('Error loading data:', err);
       const today = new Date();
-      const monday = getMondayOfWeek(today);
+      const todayString = today.toISOString().split('T')[0];
+      const monday = getMondayOfWeek(todayString);
       setWeekStart(monday);
     }
   };
@@ -148,7 +170,6 @@ const SalesActivityTracker = () => {
   };
 
   const updateDayData = (day, field, value) => {
-    // Allow empty string or convert to number (including 0)
     const numValue = value === '' ? '' : parseInt(value);
     setWeekData(prev => ({
       ...prev,
@@ -160,13 +181,14 @@ const SalesActivityTracker = () => {
   };
 
   const calculateWeeklyTotals = () => {
-    const totals = { calls: 0, emails: 0, contacts: 0, responses: 0 };
+    const totals = { calls: 0, emails: 0, contacts: 0, responses: 0, meetings: 0 };
     days.forEach(day => {
       const data = weekData[day] || {};
       totals.calls += data.calls || 0;
       totals.emails += data.emails || 0;
       totals.contacts += data.contacts || 0;
       totals.responses += data.responses || 0;
+      totals.meetings += data.meetings || 0;
     });
     return totals;
   };
@@ -174,7 +196,6 @@ const SalesActivityTracker = () => {
   const exportToExcel = () => {
     const allData = [];
     
-    // Get all keys from localStorage
     const allKeys = Object.keys(localStorage);
     const weekKeys = allKeys.filter(key => key.startsWith('week-'));
     
@@ -187,7 +208,6 @@ const SalesActivityTracker = () => {
       try {
         const data = localStorage.getItem(key);
         if (data) {
-          // Parse key: week-2024-01-01-RepName
           const parts = key.split('-');
           const monday = `${parts[1]}-${parts[2]}-${parts[3]}`;
           const rep = parts.slice(4).join('-');
@@ -195,18 +215,26 @@ const SalesActivityTracker = () => {
           const weekInfo = JSON.parse(data);
           days.forEach((day, idx) => {
             const dayData = weekInfo[day] || {};
-            const currentDate = new Date(monday);
+            
+            // Accurate date calculation
+            const currentDate = new Date(monday + 'T12:00:00');
             currentDate.setDate(currentDate.getDate() + idx);
+            
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const dayNum = String(currentDate.getDate()).padStart(2, '0');
+            const formattedDate = `${year}-${month}-${dayNum}`;
             
             allData.push({
               'Sales Rep': rep,
               'Week Starting': monday,
-              'Date': currentDate.toISOString().split('T')[0],
+              'Date': formattedDate,
               'Day': day,
               'Calls': dayData.calls || 0,
               'Emails': dayData.emails || 0,
               'Contacts': dayData.contacts || 0,
-              'Responses': dayData.responses || 0
+              'Responses': dayData.responses || 0,
+              'Meetings': dayData.meetings || 0
             });
           });
         }
@@ -220,24 +248,23 @@ const SalesActivityTracker = () => {
       return;
     }
 
-    // Sort by date
     allData.sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
     const ws = XLSX.utils.json_to_sheet(allData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Activity Data');
 
-    // Add goals sheet
     const goalsWs = XLSX.utils.json_to_sheet([{
       'Daily Calls Goal': goals.callsDaily,
       'Daily Emails Goal': goals.emailsDaily,
       'Daily Contacts Goal': goals.contactsDaily,
       'Daily Responses Goal': goals.responsesDaily,
-      'Weekly Contacts Goal': goals.contactsWeekly
+      'Daily Meetings Goal': goals.meetingsDaily,
+      'Weekly Contacts Goal': goals.contactsWeekly,
+      'Weekly Meetings Goal': goals.meetingsWeekly
     }]);
     XLSX.utils.book_append_sheet(wb, goalsWs, 'Goals');
 
-    // Add summary by rep
     const summaryData = {};
     allData.forEach(row => {
       if (!summaryData[row['Sales Rep']]) {
@@ -247,6 +274,7 @@ const SalesActivityTracker = () => {
           'Total Emails': 0,
           'Total Contacts': 0,
           'Total Responses': 0,
+          'Total Meetings': 0,
           'Days Tracked': 0
         };
       }
@@ -254,6 +282,7 @@ const SalesActivityTracker = () => {
       summaryData[row['Sales Rep']]['Total Emails'] += row.Emails;
       summaryData[row['Sales Rep']]['Total Contacts'] += row.Contacts;
       summaryData[row['Sales Rep']]['Total Responses'] += row.Responses;
+      summaryData[row['Sales Rep']]['Total Meetings'] += row.Meetings;
       summaryData[row['Sales Rep']]['Days Tracked'] += 1;
     });
 
@@ -417,9 +446,8 @@ const SalesActivityTracker = () => {
       `}</style>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        {/* Header - Fixed Layout */}
+        {/* Header */}
         <div style={{ marginBottom: '2rem', position: 'relative', minHeight: '100px', display: 'flex', alignItems: 'center' }}>
-          {/* Logo - Left Side */}
           {logoUrl && (
             <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)' }}>
               <img 
@@ -434,7 +462,6 @@ const SalesActivityTracker = () => {
             </div>
           )}
           
-          {/* Title - Centered */}
           <div style={{ flex: 1, textAlign: 'center' }}>
             <h1 style={{ 
               fontSize: '3rem', 
@@ -465,7 +492,7 @@ const SalesActivityTracker = () => {
               </div>
               
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', opacity: 0.8 }}>Week Starting</label>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', opacity: 0.8 }}>Week Starting (Monday)</label>
                 <input 
                   type="date" 
                   value={weekStart} 
@@ -511,7 +538,6 @@ const SalesActivityTracker = () => {
           <div className="card" style={{ marginBottom: '2rem' }}>
             <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.3rem' }}>⚙️ Settings</h3>
             
-            {/* Logo Upload Section */}
             <div style={{ marginBottom: '2rem', paddingBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
               <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Company Logo</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -550,12 +576,13 @@ const SalesActivityTracker = () => {
 
             <div style={{ marginBottom: '2rem' }}>
               <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Daily Goals (can be changed anytime)</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                 {[
                   ['Calls/Day', 'callsDaily'],
                   ['Emails/Day', 'emailsDaily'],
                   ['Contacts/Day', 'contactsDaily'],
-                  ['Responses/Day', 'responsesDaily']
+                  ['Responses/Day', 'responsesDaily'],
+                  ['Meetings/Day', 'meetingsDaily']
                 ].map(([label, key]) => (
                   <div key={key}>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>{label}</label>
@@ -571,16 +598,29 @@ const SalesActivityTracker = () => {
                 ))}
               </div>
               
-              <div style={{ marginTop: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Weekly Contacts Goal</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={goals.contactsWeekly}
-                  onChange={(e) => setGoals({ ...goals, contactsWeekly: parseInt(e.target.value) || 0 })}
-                  style={{ width: '200px' }}
-                  min="0"
-                />
+              <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Weekly Contacts Goal</label>
+                  <input
+                    type="number"
+                    className="input-field"
+                    value={goals.contactsWeekly}
+                    onChange={(e) => setGoals({ ...goals, contactsWeekly: parseInt(e.target.value) || 0 })}
+                    style={{ width: '100%' }}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Weekly Meetings Goal</label>
+                  <input
+                    type="number"
+                    className="input-field"
+                    value={goals.meetingsWeekly}
+                    onChange={(e) => setGoals({ ...goals, meetingsWeekly: parseInt(e.target.value) || 0 })}
+                    style={{ width: '100%' }}
+                    min="0"
+                  />
+                </div>
               </div>
               
               <button className="btn btn-success" onClick={saveGoals} style={{ marginTop: '1rem' }}>
@@ -646,7 +686,7 @@ const SalesActivityTracker = () => {
             {/* Weekly Stats */}
             <div style={{ 
               display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
               gap: '1rem',
               marginBottom: '2rem'
             }}>
@@ -654,7 +694,8 @@ const SalesActivityTracker = () => {
                 ['📞 Calls', totals.calls, callsGoal],
                 ['📧 Emails', totals.emails, emailsGoal],
                 ['👥 Contacts', totals.contacts, goals.contactsWeekly],
-                ['💬 Responses', totals.responses, goals.responsesDaily * 5]
+                ['💬 Responses', totals.responses, goals.responsesDaily * 5],
+                ['🤝 Meetings', totals.meetings, goals.meetingsWeekly]
               ].map(([label, value, goal]) => {
                 const percent = goal > 0 ? (value / goal) * 100 : 0;
                 const isAchieved = percent >= 100;
@@ -690,7 +731,9 @@ const SalesActivityTracker = () => {
             <div style={{ display: 'grid', gap: '1rem', marginBottom: '2rem' }}>
               {days.map((day, idx) => {
                 const dayData = weekData[day] || {};
-                const date = new Date(weekStart);
+                
+                // Accurate Gregorian calendar date calculation
+                const date = new Date(weekStart + 'T12:00:00');
                 date.setDate(date.getDate() + idx);
                 
                 return (
@@ -699,17 +742,23 @@ const SalesActivityTracker = () => {
                       <div>
                         <h3 style={{ margin: 0, fontSize: '1.3rem' }}>{day}</h3>
                         <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
-                          {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {date.toLocaleDateString('en-US', { 
+                            weekday: 'short',
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                          })}
                         </div>
                       </div>
                     </div>
                     
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' }}>
                       {[
                         ['Calls', 'calls', goals.callsDaily],
                         ['Emails', 'emails', goals.emailsDaily],
                         ['Contacts', 'contacts', goals.contactsDaily],
-                        ['Responses', 'responses', goals.responsesDaily]
+                        ['Responses', 'responses', goals.responsesDaily],
+                        ['Meetings', 'meetings', goals.meetingsDaily]
                       ].map(([label, field, dailyGoal]) => {
                         const value = dayData[field] === '' ? 0 : (dayData[field] || 0);
                         const percent = dailyGoal > 0 ? (value / dailyGoal) * 100 : 0;
